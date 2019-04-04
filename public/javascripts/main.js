@@ -81,33 +81,28 @@ function main()
 {
     
     kleurenKeuzeVullen(); 
-    // Get the canvas and context
-    //var canvas = document.createElement('canvas');//
+    //load actual canvas on screen into canvas
     var canvas                  = document.getElementById("kanvas"); 
     canvas.width                = 2048;
-    canvas.height               = 2048;
+    canvas.height               = 1024;
     var context                 = canvas.getContext("2d");
     var imagedata               = context.createImageData(canvas.width, canvas.height);
 
+    //create canvas for loading background aka previous view into
     var achtergrondCanvas       = document.createElement('canvas');
     achtergrondCanvas.width     = canvas.width;
     achtergrondCanvas.height    = canvas.height;
-    var achtergrondImg          = new Image();
-    achtergrondImg.width        = canvas.width;
-    achtergrondImg.height       = canvas.height;
     
-    var Actxt = achtergrondCanvas.getContext("2d");
-
-    var getekend = new Uint8Array(canvas.width * canvas.height * 4);
+    
+    //create empty canvas for uploading to server
+    var uploadCanvas = document.createElement("canvas");
+    uploadCanvas.width = canvas.width;
+    uploadCanvas.height = canvas.height;
+    var uploadImgData = uploadCanvas.getContext("2d").createImageData(uploadCanvas.width, uploadCanvas.height);
 
     function teken(x, y, rad)
     {
-
-        
-        //if(_imgData == null)
-          //  return;
-
-        _imgData    = imagedata.data;
+        _imgData    = uploadImgData.data;
         _imgW       = canvas.width;
         _imgH       = canvas.height;
 
@@ -120,26 +115,25 @@ function main()
                     var offset = (x + xd + ((y + yd) * _imgW)) * 4;
                     var nieuwAlfa = (deKleur[3] / 255.0) * ((rad - dist) / rad) ;
 
-                    
-
                     for(var i=0; i < 3; i++)
-                        _imgData[offset + i] = (_imgData[offset + i] * (1.0 - nieuwAlfa)) + (nieuwAlfa * deKleur[i]);
-                    
+                        _imgData[offset + i] = (imagedata.data[offset + i] * (1.0 - nieuwAlfa)) + (nieuwAlfa * deKleur[i]);
+                        
+                    _imgData[offset + 3] = Math.max(255, imagedata.data[offset + 3] + deKleur[3]);
 
-                    _imgData[offset + 3] = Math.max(255, _imgData[offset + 3] + deKleur[3]);
+                    for(var i=0; i < 4; i++)
+                        imagedata.data[offset + i] = _imgData[offset + i];
                 }
             }
     }
 
- 
-
     var invalidated = true;
-
+    var ietsGetekend = false;
      
     function tekenHier(x, y)
     {
       teken(x, y, radius);
       invalidated = true;
+      ietsGetekend = true;
     }
 
     function muisKlik(click) 
@@ -174,62 +168,73 @@ function main()
    document.getElementById("kanvas").onmousedown = muisBeneden;
    document.getElementById("kanvas").onmouseup = muisOmhoog;
    document.getElementById("kanvas").onmousewheel = muisWiel;
-    
-    var acht = null;
+
     var paintBackground = true;
+    var achtergrondImg  = null;
 
-    achtergrondImg.onload       = function () 
+    function loadBackground()
     {
-        console.log("tabula rasa loads!");  
+        paintBackground = false;    
 
-        var ctxt = achtergrondCanvas.getContext("2d");
-        ctxt.drawImage(this, 0, 0); 
-        
-        var achtergrondData = ctxt.getImageData(0, 0, achtergrondCanvas.width, achtergrondCanvas.height);
-        acht                = new Uint8Array(achtergrondData.data.buffer);
+        achtergrondImg          = new Image();
+        achtergrondImg.width        = canvas.width;
+        achtergrondImg.height       = canvas.height;
 
-        invalidated = true;
-        paintBackground = true;
-    
-    };
-    achtergrondImg.src = "/images/tabula_rasa.png";
-
-    
-
-
-    function renderFrame(offset) 
-    {
-
-        for (var x=0; x<canvas.width; x++) 
+        achtergrondImg.onload       = function () 
         {
-            for (var y=0; y<canvas.height; y++) 
-            {
-                var pixelindex = (y * canvas.width + x) * 4;
- 
-                var rTkn    = getekend[pixelindex + 0];
-                var gTkn    = getekend[pixelindex + 1];
-                var bTkn    = getekend[pixelindex + 2];
-                var aTkn    = getekend[pixelindex + 3];
-                
-                var rTR     = acht == null ? 128 : acht[pixelindex + 0];
-                var gTR     = acht == null ? 128 : acht[pixelindex + 1];
-                var bTR     = acht == null ? 128 : acht[pixelindex + 2];
-                
+            let Actxt = achtergrondCanvas.getContext("2d");
+            Actxt.drawImage(this, 0, 0); 
+            
+            var achtergrondData = Actxt.getImageData(0, 0, achtergrondCanvas.width, achtergrondCanvas.height);
 
-                var mix     = aTkn / 255.0;
+            invalidated = true;
 
-                var red     = (rTkn * mix) + (rTR * (1.0 - mix));
-                var green   = (gTkn * mix) + (gTR * (1.0 - mix));
-                var blue    = (bTkn * mix) + (bTR * (1.0 - mix));
- 
-                imagedata.data[pixelindex]      = red;   
-                imagedata.data[pixelindex+1]    = green;
-                imagedata.data[pixelindex+2]    = blue;
-                imagedata.data[pixelindex+3]    = 256;
-            }
-        }   
+            for (let pixelindex=0; pixelindex < canvas.width * canvas.height * 4; pixelindex += 4)
+                for(let i=0; i<4; i++)
+                        imagedata.data[pixelindex + i] = achtergrondData.data[pixelindex + i];
+
+
+            
+        };
+        achtergrondImg.src = "/images/drawn.png";
+
+        
+    }
+
+    var myRandomIdentication = Math.random();
+
+    function uploadCurrentDrawing()
+    {
+        if(!ietsGetekend)
+            return;
+
+        ietsGetekend = false;
+    
+        let dataUri = uploadCanvas.toDataURL("png");
+
+        let data = new FormData();
+        data.append('drawn', dataUri);
+        data.append('id', myRandomIdentication);
+
+        const Http = new XMLHttpRequest();
+        const url = "http://localhost:3000/uploadDraw";
+        Http.open("POST", url, true);
+        
+        Http.send(data);
+
+        for(var i=0; i<canvas.width * canvas.heigth * 4; i++)
+            uploadImgData.data[i] = 0;
+
+        Http.onreadystatechange=(e)=>{
+          //  if(Http.responseText !== myRandomIdentication)
+            //    paintBackground = true;
+            console.log("response from server: " + Http.responseText);
+        }
     }
  
+    var deLaatsteTijdMS = performance.now();
+    kleurenKeuzeVullen();
+
     // Main loop
     function loop(tframe) 
     {
@@ -237,17 +242,19 @@ function main()
  
          if(invalidated)
          {
-             if(paintBackground)
-             {
-                renderFrame(Math.floor(tframe / 10));
-                paintBackground = false;
-
-                kleurenKeuzeVullen();
-             }
- 
-            context.putImageData(imagedata, 0, 0);
-
+            canvas.getContext("2d").putImageData(imagedata, 0, 0);
             invalidated = false;
+         }
+
+         if(paintBackground)
+                loadBackground();
+
+         if(tframe - 10000 > deLaatsteTijdMS && !down)
+         {
+             deLaatsteTijdMS = tframe;
+
+             uploadCanvas.getContext("2d").putImageData(uploadImgData, 0, 0);
+             uploadCurrentDrawing();
          }
     }
 
